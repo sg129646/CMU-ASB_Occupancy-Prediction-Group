@@ -26,13 +26,19 @@
  *   - Adafruit AMG88xx  (search "Adafruit AMG88xx")
  *   - Adafruit BusIO    (dependency, usually auto-installed)
  *
+ * Wiring (ESP32 DevKit):
+ *   AMG8833 VIN  → 3.3V
+ *   AMG8833 GND  → GND
+ *   AMG8833 SDA  → GPIO 21
+ *   AMG8833 SCL  → GPIO 22
+ *   (INT pin not used)
  */
 
 #include <Wire.h>
 #include <Adafruit_AMG88xx.h>
 
 // ─────────────────────────────────────────────────────────────
-//  CONFIGURATION
+//  CONFIGURATION — tweak these for your environment
 // ─────────────────────────────────────────────────────────────
 
 // Temperature threshold above background to count as "body present".
@@ -41,7 +47,7 @@
 #define TEMP_THRESHOLD_ABOVE_BG   4.0f   // °C above rolling background
 
 // Minimum number of pixels a blob must contain to be considered real.
-// Filters out sensor noise.
+// Filters out sensor noise and small animals.
 #define MIN_BLOB_PIXELS           2
 
 // Maximum pixels — a single person rarely covers more than 20 pixels
@@ -78,6 +84,11 @@
 
 // Print blob detections
 #define DEBUG_PRINT_BLOBS         true
+
+// Emit a compact single-line pixel dump each frame for the Python viewer.
+// Format:  PIXELS:<p0>,<p1>,...,<p63>|BG:<b0>,<b1>,...,<b63>
+// Disable if you don't need the viewer (saves ~4 KB/s of serial bandwidth).
+#define PIXEL_STREAM              true
 
 // ─────────────────────────────────────────────────────────────
 //  INTERNAL STRUCTURES
@@ -305,8 +316,31 @@ void decideDirection(Track &t) {
 //  DEBUG HELPERS
 // ─────────────────────────────────────────────────────────────
 
+void printPixelStream() {
+  // Single line: PIXELS:v,v,...|BG:v,v,...|BLOBS:cx,cy;cx,cy;...
+  Serial.print("PIXELS:");
+  for (int i = 0; i < 64; i++) {
+    Serial.print(pixels[i], 1);
+    if (i < 63) Serial.print(',');
+  }
+  Serial.print("|BG:");
+  for (int i = 0; i < 64; i++) {
+    Serial.print(background[i], 1);
+    if (i < 63) Serial.print(',');
+  }
+  Serial.print("|BLOBS:");
+  for (int b = 0; b < blobCount; b++) {
+    Serial.print(blobs[b].cx, 2);
+    Serial.print(',');
+    Serial.print(blobs[b].cy, 2);
+    if (b < blobCount - 1) Serial.print(';');
+  }
+  Serial.println();
+}
+
+
 void printGrid() {
-  Serial.println("── Thermal Grid (°C above bg) ──");
+  Serial.println("-- Thermal Grid (degC above bg) --");
   for (int r = 0; r < 8; r++) {
     for (int c = 0; c < 8; c++) {
       float delta = pixels[idx(r, c)] - background[idx(r, c)];
@@ -314,7 +348,7 @@ void printGrid() {
     }
     Serial.println();
   }
-  Serial.println("────────────────────────────────");
+  Serial.println("----------------------------------");
 }
 
 void printBlobs() {
@@ -346,10 +380,10 @@ void setup() {
 
   // Set frame rate
   if (FRAME_RATE_10HZ) {
-    amg.setFramerate(AMG88xx_FPS_10);
+    amg.setFrameRate(AMG88xx_FPS_10);
     Serial.println("Frame rate: 10 Hz");
   } else {
-    amg.setFramerate(AMG88xx_FPS_1);
+    amg.setFrameRate(AMG88xx_FPS_1);
     Serial.println("Frame rate: 1 Hz");
   }
 
@@ -395,8 +429,9 @@ void loop() {
   updateTracks();
 
   // Debug output
-  if (DEBUG_PRINT_GRID)  printGrid();
-  if (DEBUG_PRINT_BLOBS) printBlobs();
+  if (DEBUG_PRINT_GRID)   printGrid();
+  if (DEBUG_PRINT_BLOBS)  printBlobs();
+  if (PIXEL_STREAM)       printPixelStream();
 
   // AMG8833 at 10 Hz → read every 100 ms
   delay(FRAME_RATE_10HZ ? 100 : 1000);
