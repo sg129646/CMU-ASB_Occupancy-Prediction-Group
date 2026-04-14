@@ -35,7 +35,32 @@
  */
 
 #include <Wire.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 #include <Adafruit_AMG88xx.h>
+#include "esp_wpa2.h"
+#include <time.h>
+
+// =============================================================
+//  PER-DEVICE CONFIG -- only section that changes per sensor
+// =============================================================
+
+// Unique name for this sensor location. Shows up in the database.
+// Use something short, e.g. "living_room", "office", "bedroom"
+#define ROOM_NAME   "living_room"
+
+// Your WiFi credentials
+#define WIFI_SSID   "CMU-SECURE"
+#define EAP_IDENTITY "test_user" //will replace once the rest of the code is working
+#define EAP_PASSWORD "test_password" //will replace once the rest of the code is working
+
+// Supbase URL and API key (see server.py for details)
+#define SUPABASE_URL   "https://zhdtwpcychzlpkvqhqoz.supabase.co/rest/v1/room_state"
+#define SUPABASE_API_KEY "sb_publishable_e_gDEKZ60lUNuQNJLpc-Nw_i7vqWh3p"
+
+//Time Configuration
+#define NTP_SERVER "pool.ntp.org"
+#define TIME_ZONE "EST5EDT,M3.2.0,M11.1.0"
 
 // ─────────────────────────────────────────────────────────────
 //  CONFIGURATION — tweak these for your environment
@@ -88,7 +113,7 @@
 // Emit a compact single-line pixel dump each frame for the Python viewer.
 // Format:  PIXELS:<p0>,<p1>,...,<p63>|BG:<b0>,<b1>,...,<b63>
 // Disable if you don't need the viewer (saves ~4 KB/s of serial bandwidth).
-#define PIXEL_STREAM              true
+#define PIXEL_STREAM              false
 
 // ─────────────────────────────────────────────────────────────
 //  INTERNAL STRUCTURES
@@ -132,6 +157,118 @@ volatile int peopleIn  = 0;
 volatile int peopleOut = 0;
 
 // ─────────────────────────────────────────────────────────────
+//  WIFI
+// ─────────────────────────────────────────────────────────────
+
+void connectWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+
+  Serial.printf("Connecting to Enterprise WiFi: %s ", WIFI_SSID);
+  
+  WiFi.disconnect(true); // Clear previous config
+  WiFi.mode(WIFI_STA);
+
+  // Configure WPA2 Enterprise identity and password
+  esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)EAP_IDENTITY, strlen(EAP_IDENTITY));
+  esp_wifi_sta_wpa2_ent_set_username((uint8_t *)EAP_IDENTITY, strlen(EAP_IDENTITY));
+  esp_wifi_sta_wpa2_ent_set_password((uint8_t *)EAP_PASSWORD, strlen(EAP_PASSWORD));
+  
+  // Enable WPA2 Enterprise
+  esp_wifi_sta_wpa2_ent_enable();
+
+  // Begin connection with SSID only (credentials are handled by the lines above)
+  WiFi.begin(WIFI_SSID);
+
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    if (millis() - start > 20000) {
+      Serial.println("\nWiFi timeout. Will retry in main loop.");
+      return;
+    }
+  }
+  Serial.printf("\nConnected! IP: %s\n", WiFi.localIP().toString().c_str());
+}
+
+// ─────────────────────────────────────────────────────────────
+//  HTTP POST
+// ─────────────────────────────────────────────────────────────
+bool checkSupabaseConnection() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[SUPABASE] WiFi not connected. Cannot check database.");
+    return false;
+  }
+
+  HTTPClient http;
+  
+  // Append ?limit=1 so we don't download the whole table
+  String check_url = String(SUPABASE_URL) + "?limit=1";
+  http.begin(check_url);
+  
+  // Add required authentication headers
+  http.addHeader("apikey", SUPABASE_API_KEY);
+  http.addHeader("Authorization", String("Bearer ") + String(SUPABASE_API_KEY));
+
+  Serial.print("[SUPABASE] Pinging table... ");
+  int httpResponseCode = http.GET();
+
+  bool success = false;
+  // A 200-level response means the URL is correct and auth succeeded
+  if (httpResponseCode >= 200 && httpResponseCode < 300) {
+    Serial.println("SUCCESS! Connected to table.");
+    success = true;
+  } else {
+    Serial.printf("FAILED! (HTTP Code: %d)\n", httpResponseCode);
+    Serial.println("  -> Error Details: " + http.getString());
+    Serial.println("  -> Please check your URL, API Key, and ensure the table exists.");
+  }
+
+  http.end();
+  return success;
+}
+
+void sendToSupabase() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    http.begin(SUPABASE_URL);
+    
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("apikey", SUPABASE_API_KEY);
+    http.addHeader("Authorization", String("Bearer ") + String(SUPABASE_API_KEY));
+    
+    // We use an UPSERT (update if exists, insert if new) based on the room name.
+    // This requires 'room' to be set as a Primary Key or Unique constraint in Supabase.
+    http.addHeader("Prefer", "resolution=merge-duplicates"); 
+
+    // Calculate current occupancy (preventing negative numbers if someone sneaks out)
+    int currentOccupancy = peopleIn - peopleOut;
+    if (currentOccupancy < 0) currentOccupancy = 0; 
+
+    // Build the JSON payload to match your exact columns
+    String payload = "{";
+    payload += "\"room\": \"" + String(ROOM_NAME) + "\", ";
+    payload += "\"occupancy\": " + String(currentOccupancy) + ", ";
+    payload += "\"total_in\": " + String(peopleIn) + ", ";
+    payload += "\"total_out\": " + String(peopleOut);
+    payload += "}";
+
+    int httpResponseCode = http.POST(payload);
+
+    if (httpResponseCode >= 200 && httpResponseCode < 300) {
+      Serial.printf("[SUPABASE] Synced %s | Occ: %d, In: %d, Out: %d\n", 
+                    ROOM_NAME, currentOccupancy, peopleIn, peopleOut);
+    } else {
+      Serial.printf("[SUPABASE] Error syncing: %d\n", httpResponseCode);
+      Serial.println(http.getString());
+    }
+    http.end();
+  } else {
+    Serial.println("[SUPABASE] WiFi Disconnected. Skipping sync.");
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 //  HELPERS
 // ─────────────────────────────────────────────────────────────
 
@@ -140,6 +277,24 @@ inline int idx(int row, int col) { return row * 8 + col; }
 float euclidean(float ax, float ay, float bx, float by) {
   float dx = ax - bx, dy = ay - by;
   return sqrt(dx * dx + dy * dy);
+}
+
+void checkMidnightReset() {
+  struct tm timeinfo;
+
+  if (!getLocalTime(&timeinfo)) {
+    return; 
+  }
+  static int lastResetDay = -1; 
+
+  if (timeinfo.tm_hour == 0 && timeinfo.tm_mday != lastResetDay) {
+    peopleIn  = 0;
+    peopleOut = 0;
+    lastResetDay = timeinfo.tm_mday;
+    
+    Serial.println("Midnight reached! Daily counters reset to 0.");
+    sendToSupabase();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -310,6 +465,8 @@ void decideDirection(Track &t) {
                   t.id, peopleIn, peopleOut);
   }
   t.counted = true;
+
+  sendToSupabase();
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -368,6 +525,21 @@ void printBlobs() {
 void setup() {
   Serial.begin(SERIAL_BAUD);
   delay(500);
+
+  // Wifi stuff
+  connectWiFi();
+  checkSupabaseConnection();
+
+  Serial.print("Syncing time with NTP... ");
+  configTzTime(TIME_ZONE, NTP_SERVER);
+  struct tm timeinfo;
+  while (!getLocalTime(&timeinfo)) {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.println(" TIME SYNCED!");
+  Serial.printf("Current Time: %02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min);
+
   Serial.println("\n===  AMG8833 People Counter  ===");
 
   Wire.begin();  // SDA=21, SCL=22 on ESP32 DevKit
@@ -377,15 +549,6 @@ void setup() {
     while (1) { delay(500); }
   }
   Serial.println("AMG8833 found.");
-
-  // Set frame rate
-  if (FRAME_RATE_10HZ) {
-    amg.setFrameRate(AMG88xx_FPS_10);
-    Serial.println("Frame rate: 10 Hz");
-  } else {
-    amg.setFrameRate(AMG88xx_FPS_1);
-    Serial.println("Frame rate: 1 Hz");
-  }
 
   // ── Warm up background model ──────────────────────────────
   // Read several frames and average them before going live.
@@ -411,6 +574,12 @@ void setup() {
 // ─────────────────────────────────────────────────────────────
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi lost. Reconnecting...");
+    connectWiFi();
+  }
+  
+  checkMidnightReset();
   amg.readPixels(pixels);
 
   // Update rolling background (only pixels NOT above threshold,
