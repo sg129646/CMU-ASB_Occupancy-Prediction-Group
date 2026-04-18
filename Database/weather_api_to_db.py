@@ -14,25 +14,21 @@ def fetch_and_store_weather():
     conn = psycopg2.connect(os.getenv("DATABASE_URL"))
     cursor = conn.cursor()
 
-    # Get last stored timestamp
     cursor.execute("SELECT MAX(timestamp) FROM weather;")
-    result = cursor.fetchone()[0]
+    last_timestamp = cursor.fetchone()[0]
 
-    if result:
-        start_datetime = result + timedelta(hours=1)
-        start_date = start_datetime.date()
+    if last_timestamp:
+        start_date = (last_timestamp + timedelta(hours=1)).date()
     else:
         start_date = date(2026, 4, 13)
 
     print(f"Fetching from {start_date} to {end_date}")
 
-    # Optional: skip API call if nothing new is possible
     if start_date > end_date:
         print("No new data to fetch yet.")
         conn.close()
         return
 
-    # API call
     url = "https://archive-api.open-meteo.com/v1/archive"
     params = {
         "latitude": 40.4415995,
@@ -61,9 +57,11 @@ def fetch_and_store_weather():
 
     inserted = 0
 
-    # Insert in DB
     for i, time_str in enumerate(hourly["time"]):
         timestamp = datetime.fromisoformat(time_str)
+
+        if last_timestamp and timestamp <= last_timestamp:
+            continue
 
         cursor.execute("""
             INSERT INTO weather (timestamp, temperature, precipitation, snowfall, windspeed, condition)
