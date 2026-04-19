@@ -2,12 +2,15 @@ import requests
 import psycopg2
 import os
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 load_dotenv()
 
+TZ = ZoneInfo("America/New_York")
+
 def fetch_and_store_weather():
-    now = datetime.now()
+    now = datetime.now(TZ)
     safe_now = now - timedelta(hours=1)
     end_date = safe_now.date()
 
@@ -18,7 +21,7 @@ def fetch_and_store_weather():
     last_timestamp = cursor.fetchone()[0]
 
     if last_timestamp:
-        start_date = (last_timestamp + timedelta(hours=1)).date()
+        start_date = (last_timestamp.astimezone(TZ) + timedelta(hours=1)).date()
     else:
         start_date = date(2026, 4, 13)
 
@@ -58,9 +61,9 @@ def fetch_and_store_weather():
     inserted = 0
 
     for i, time_str in enumerate(hourly["time"]):
-        timestamp = datetime.fromisoformat(time_str)
+        timestamp = datetime.fromisoformat(time_str).replace(tzinfo=TZ)
 
-        if last_timestamp and timestamp <= last_timestamp:
+        if last_timestamp and timestamp <= last_timestamp.astimezone(TZ):
             continue
 
         cursor.execute("""
