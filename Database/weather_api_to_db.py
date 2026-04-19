@@ -21,11 +21,16 @@ def fetch_and_store_weather():
     cursor.execute("SELECT MAX(timestamp) FROM weather;")
     last_timestamp = cursor.fetchone()[0]
 
-    if last_timestamp:
-        start_date = (last_timestamp.astimezone(TZ) + timedelta(hours=1)).date()
+    last_ts_local = last_timestamp.astimezone(TZ) if last_timestamp else None
+
+    if last_ts_local:
+        start_date = (last_ts_local + timedelta(hours=1)).date()
     else:
         start_date = date(2026, 4, 13)
 
+    print(f"now: {now}")
+    print(f"safe_cutoff: {safe_cutoff}")
+    print(f"last_timestamp: {last_timestamp}")
     print(f"Fetching from {start_date} to {end_date}")
 
     if start_date > end_date:
@@ -62,41 +67,32 @@ def fetch_and_store_weather():
     inserted = 0
 
     for i, time_str in enumerate(hourly["time"]):
-    # API gives local time → attach timezone
-    timestamp = datetime.fromisoformat(time_str).replace(tzinfo=TZ)
+        # Open-Meteo returns local wall-clock time because timezone=America/New_York
+        timestamp_local = datetime.fromisoformat(time_str).replace(tzinfo=TZ)
 
-    # Convert to local explicitly (safe + consistent)
-    timestamp_local = timestamp.astimezone(TZ)
+        print(f"time_str: {time_str}, timestamp_local: {timestamp_local}")
 
-    # Normalize last timestamp once
-    if last_timestamp:
-        last_ts_local = last_timestamp.astimezone(TZ)
-    else:
-        last_ts_local = None
+        if last_ts_local and timestamp_local <= last_ts_local:
+            continue
 
-    # Skip already stored data
-    if last_ts_local and timestamp_local <= last_ts_local:
-        continue
+        if timestamp_local > safe_cutoff:
+            continue
 
-    # Skip future / not-yet-available hours
-    if timestamp_local > safe_cutoff:
-        continue
+        cursor.execute("""
+            INSERT INTO weather (timestamp, temperature, precipitation, snowfall, windspeed, condition)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (timestamp) DO NOTHING
+        """, (
+            timestamp_local,
+            hourly["temperature_2m"][i],
+            hourly["precipitation"][i],
+            hourly["snowfall"][i],
+            hourly["windspeed_10m"][i],
+            hourly["weathercode"][i]
+        ))
 
-    cursor.execute("""
-        INSERT INTO weather (timestamp, temperature, precipitation, snowfall, windspeed, condition)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (timestamp) DO NOTHING
-    """, (
-        timestamp,
-        hourly["temperature_2m"][i],
-        hourly["precipitation"][i],
-        hourly["snowfall"][i],
-        hourly["windspeed_10m"][i],
-        hourly["weathercode"][i]
-    ))
-
-    if cursor.rowcount > 0:
-        inserted += 1
+        if cursor.rowcount > 0:
+            inserted += 1
 
     conn.commit()
     conn.close()
