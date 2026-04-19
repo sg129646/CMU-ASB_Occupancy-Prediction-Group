@@ -20,7 +20,6 @@ def fetch_and_store_weather():
 
     cursor.execute("SELECT MAX(timestamp) FROM weather;")
     last_timestamp = cursor.fetchone()[0]
-
     last_ts_local = last_timestamp.astimezone(TZ) if last_timestamp else None
 
     if last_ts_local:
@@ -28,9 +27,6 @@ def fetch_and_store_weather():
     else:
         start_date = date(2026, 4, 13)
 
-    print(f"now: {now}")
-    print(f"safe_cutoff: {safe_cutoff}")
-    print(f"last_timestamp: {last_timestamp}")
     print(f"Fetching from {start_date} to {end_date}")
 
     if start_date > end_date:
@@ -67,10 +63,9 @@ def fetch_and_store_weather():
     inserted = 0
 
     for i, time_str in enumerate(hourly["time"]):
-        # Open-Meteo returns local wall-clock time because timezone=America/New_York
-        timestamp_local = datetime.fromisoformat(time_str).replace(tzinfo=TZ)
-
-        print(f"time_str: {time_str}, timestamp_local: {timestamp_local}")
+        # API gives local time, so attach the same timezone
+        timestamp = datetime.fromisoformat(time_str).replace(tzinfo=TZ)
+        timestamp_local = timestamp.astimezone(TZ)
 
         if last_ts_local and timestamp_local <= last_ts_local:
             continue
@@ -83,7 +78,7 @@ def fetch_and_store_weather():
             VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (timestamp) DO NOTHING
         """, (
-            timestamp_local,
+            timestamp,
             hourly["temperature_2m"][i],
             hourly["precipitation"][i],
             hourly["snowfall"][i],
