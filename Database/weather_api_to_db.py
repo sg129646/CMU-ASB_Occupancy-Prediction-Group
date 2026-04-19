@@ -62,29 +62,41 @@ def fetch_and_store_weather():
     inserted = 0
 
     for i, time_str in enumerate(hourly["time"]):
-        timestamp = datetime.fromisoformat(time_str).replace(tzinfo=TZ)
+    # API gives local time → attach timezone
+    timestamp = datetime.fromisoformat(time_str).replace(tzinfo=TZ)
 
-        if last_timestamp and timestamp <= last_timestamp.astimezone(TZ):
-            continue
+    # Convert to local explicitly (safe + consistent)
+    timestamp_local = timestamp.astimezone(TZ)
 
-        if timestamp > safe_cutoff:
-            continue
+    # Normalize last timestamp once
+    if last_timestamp:
+        last_ts_local = last_timestamp.astimezone(TZ)
+    else:
+        last_ts_local = None
 
-        cursor.execute("""
-            INSERT INTO weather (timestamp, temperature, precipitation, snowfall, windspeed, condition)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (timestamp) DO NOTHING
-        """, (
-            timestamp,
-            hourly["temperature_2m"][i],
-            hourly["precipitation"][i],
-            hourly["snowfall"][i],
-            hourly["windspeed_10m"][i],
-            hourly["weathercode"][i]
-        ))
+    # Skip already stored data
+    if last_ts_local and timestamp_local <= last_ts_local:
+        continue
 
-        if cursor.rowcount > 0:
-            inserted += 1
+    # Skip future / not-yet-available hours
+    if timestamp_local > safe_cutoff:
+        continue
+
+    cursor.execute("""
+        INSERT INTO weather (timestamp, temperature, precipitation, snowfall, windspeed, condition)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (timestamp) DO NOTHING
+    """, (
+        timestamp,
+        hourly["temperature_2m"][i],
+        hourly["precipitation"][i],
+        hourly["snowfall"][i],
+        hourly["windspeed_10m"][i],
+        hourly["weathercode"][i]
+    ))
+
+    if cursor.rowcount > 0:
+        inserted += 1
 
     conn.commit()
     conn.close()
