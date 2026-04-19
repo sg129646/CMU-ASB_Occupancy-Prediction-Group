@@ -12,6 +12,7 @@ TZ = ZoneInfo("America/New_York")
 def fetch_and_store_weather():
     now = datetime.now(TZ)
     safe_now = now - timedelta(hours=1)
+    safe_cutoff = safe_now.replace(minute=0, second=0, microsecond=0)
     end_date = safe_now.date()
 
     conn = psycopg2.connect(os.getenv("DATABASE_URL"))
@@ -64,6 +65,9 @@ def fetch_and_store_weather():
         timestamp = datetime.fromisoformat(time_str).replace(tzinfo=TZ)
 
         if last_timestamp and timestamp <= last_timestamp.astimezone(TZ):
+            continue
+
+        if timestamp > safe_cutoff:
             continue
 
         cursor.execute("""
