@@ -1,0 +1,30 @@
+{
+  "ridge": {
+    "resolution_min": 60,
+    "lag_hrs": 72,
+    "lag_steps": 72,
+    "n_targets": 0,
+    "mae": 1.8444713869507272
+  },
+  "xgb": {
+    "resolution_min": 60,
+    "lag_hrs": 96,
+    "lag_steps": 96,
+    "n_targets": 0,
+    "mae": 1.7549055687618251
+  },
+  "tft": {
+    "resolution_min": 30,
+    "lag_hrs": 24,
+    "lag_steps": 48,
+    "n_targets": 48,
+    "mae": 0.3627046512185141
+  },
+  "timellm": {
+    "resolution_min": 30,
+    "lag_hrs": 24,
+    "lag_steps": 48,
+    "n_targets": 48,
+    "mae": 0.359375
+  }
+}

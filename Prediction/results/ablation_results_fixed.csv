@@ -1,0 +1,23 @@
+model,experiment,removed_group,n_features,mae,delta_mae,rel_delta_mae,note
+ridge,FULL,none,157,1.8649,0.0,0.0,
+ridge,-G1_temporal,G1_temporal,153,1.8685,0.0035,0.0019,
+ridge,-G2_schedule,G2_schedule,155,1.8654,0.0005,0.0003,
+ridge,-G3_capacity,G3_capacity,155,1.8683,0.0033,0.0018,
+ridge,-G4_weather,G4_weather,153,1.8431,-0.0219,-0.0117,
+ridge,-G5_history,G5_history,85,6.2953,4.4304,2.3756,
+ridge,-G6_future,G6_future,85,2.6943,0.8293,0.4447,
+xgb,FULL,none,181,1.8201,0.0,0.0,
+xgb,-G1_temporal,G1_temporal,177,1.8122,-0.0079,-0.0043,
+xgb,-G2_schedule,G2_schedule,179,1.8015,-0.0186,-0.0102,
+xgb,-G3_capacity,G3_capacity,179,1.8007,-0.0194,-0.0106,
+xgb,-G4_weather,G4_weather,177,1.7478,-0.0723,-0.0397,
+xgb,-G5_history,G5_history,85,4.0561,2.236,1.2285,
+xgb,-G6_future,G6_future,109,1.8837,0.0636,0.0349,
+tft,FULL,none,253,0.4659,0.0,0.0,
+tft,-G1_temporal,G1_temporal,253,2.6143,2.1485,4.6117,
+tft,-G2_schedule,G2_schedule,253,1.8342,1.3683,2.9371,
+tft,-G3_capacity,G3_capacity,253,,,,N/A — capacity/extra_hours not in TFT covariate base (sweep-aligned)
+tft,-G4_weather,G4_weather,253,,,,N/A — weather not in TFT covariate base (sweep-aligned)
+tft,-G5_history,G5_history,253,,,,"N/A — TFT uses past observed series directly, not explicit lag columns"
+tft,-G6_future,G6_future,253,0.9464,0.4805,1.0314,"approx — mapped to [in_session, fce_score]; exact future cols unavailable in TFT"
+timellm,FULL,none,N/A,0.3385,0.0,0.0,TimeLLM does not use exogenous features; ablation not applicable

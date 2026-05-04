@@ -1,0 +1,16 @@
+{
+  "ridge": {
+    "resolution_min": 60,
+    "lag_hrs": 72,
+    "lag_steps": 72,
+    "n_targets": 0,
+    "mae": 1.8362661947817251
+  },
+  "xgb": {
+    "resolution_min": 60,
+    "lag_hrs": 96,
+    "lag_steps": 96,
+    "n_targets": 0,
+    "mae": 1.6916611014910523
+  }
+}

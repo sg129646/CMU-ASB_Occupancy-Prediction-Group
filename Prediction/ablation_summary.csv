@@ -1,0 +1,7 @@
+removed_group,avg_rel_delta_mae,importance
+G5_history,1.0018666666666667,🔴 HIGH
+G3_capacity,0.4602,🔴 HIGH
+G1_temporal,-0.025666666666666667,🟢 LOW
+G2_schedule,-0.0402,🟢 LOW
+G6_future,-0.04993333333333335,🟢 LOW
+G4_weather,-0.23556666666666667,🟢 LOW
